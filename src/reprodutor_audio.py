@@ -3,17 +3,31 @@ import os
 import time # Para o teste
 
 # --- Configurações de Áudio ---
-# Obtém o diretório do script atual e constrói o caminho para a pasta 'sons'
-# __file__ é o caminho do script atual (reprodutor_audio.py)
-# os.path.dirname(__file__) é o diretório 'src'
-# os.path.join(..., "..", "sons") sobe um nível para 'PROJETO_GRIO_LOCAL' e entra em 'sons'
-CAMINHO_BASE_SONS = os.path.join(os.path.dirname(__file__), "..", "sons")
-CAMINHO_EFEITOS = os.path.join(CAMINHO_BASE_SONS, "efeitos")
-CAMINHO_TRILHAS = os.path.join(CAMINHO_BASE_SONS, "trilhas")
+# Removidas as definições antigas que usavam __file__
+# Estas variáveis serão definidas pela função set_base_path_for_sounds
+_APP_SOUND_BASE_PATH = None
+CAMINHO_EFEITOS = None
+CAMINHO_TRILHAS = None
 
 # Cache para sons carregados (efeitos) para evitar recarregar
 cache_efeitos_sonoros = {}
-loops_de_efeito_ativos = {} # Novo: Para rastrear canais de efeitos em loop {"id_loop": channel_object}
+loops_de_efeito_ativos = {} # Para rastrear canais de efeitos em loop {"id_loop": channel_object}
+
+def set_base_path_for_sounds(provided_sound_base_path):
+    """Define o caminho base para os diretórios de som e atualiza CAMINHO_EFEITOS e CAMINHO_TRILHAS."""
+    global _APP_SOUND_BASE_PATH, CAMINHO_EFEITOS, CAMINHO_TRILHAS
+    
+    _APP_SOUND_BASE_PATH = provided_sound_base_path
+    if _APP_SOUND_BASE_PATH and os.path.isdir(_APP_SOUND_BASE_PATH): # Verifica se o caminho base é um diretório válido
+        CAMINHO_EFEITOS = os.path.join(_APP_SOUND_BASE_PATH, "efeitos")
+        CAMINHO_TRILHAS = os.path.join(_APP_SOUND_BASE_PATH, "trilhas")
+        print(f"[Reprodutor Áudio] Caminho base de sons definido para: '{_APP_SOUND_BASE_PATH}'")
+        print(f"[Reprodutor Áudio] Caminho de efeitos agora é: '{CAMINHO_EFEITOS}'")
+        print(f"[Reprodutor Áudio] Caminho de trilhas agora é: '{CAMINHO_TRILHAS}'")
+    else:
+        print(f"ERRO CRÍTICO: Caminho base para sons ('{provided_sound_base_path}') não fornecido, inválido ou não é um diretório. Os sons não funcionarão.")
+        CAMINHO_EFEITOS = None
+        CAMINHO_TRILHAS = None
 
 def inicializar_audio():
     """Inicializa o pygame.mixer."""
@@ -33,6 +47,10 @@ def tocar_efeito_sonoro(nome_arquivo_efeito, looping=False, id_loop=None, volume
     Toca um efeito sonoro.
     Carrega o som do cache se já foi carregado antes.
     """
+    if not CAMINHO_EFEITOS:
+        print("ERRO INTERNO: Caminho para efeitos sonoros (CAMINHO_EFEITOS) não configurado no reprodutor_audio.py. Sons de efeito não podem ser tocados.")
+        return
+
     if not pygame.mixer.get_init():
         print("Mixer não inicializado. Chamando inicializar_audio().")
         if not inicializar_audio():
@@ -88,6 +106,10 @@ def parar_efeito_em_loop(id_loop):
     if not pygame.mixer.get_init():
         return
 
+    # Adicionada verificação de CAMINHO_EFEITOS para consistência, embora não diretamente usado aqui
+    if not CAMINHO_EFEITOS:
+        print("AVISO: CAMINHO_EFEITOS não configurado ao tentar parar loop, mas a lógica de parada prosseguirá.")
+
     if id_loop in loops_de_efeito_ativos:
         channel = loops_de_efeito_ativos.pop(id_loop) # Remove e obtém o canal
         if channel and channel.get_busy(): # Verifica se o canal ainda está ativo
@@ -103,6 +125,10 @@ def tocar_trilha_sonora(nome_arquivo_trilha, loop=-1, volume=1.0):
     Toca uma trilha sonora. O loop -1 significa tocar indefinidamente.
     A música usa um canal dedicado do mixer.
     """
+    if not CAMINHO_TRILHAS:
+        print("ERRO INTERNO: Caminho para trilhas sonoras (CAMINHO_TRILHAS) não configurado no reprodutor_audio.py. Trilhas não podem ser tocadas.")
+        return
+
     if not pygame.mixer.get_init():
         print("Mixer não inicializado. Chamando inicializar_audio().")
         if not inicializar_audio():

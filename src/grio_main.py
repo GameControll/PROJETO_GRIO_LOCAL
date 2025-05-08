@@ -3,6 +3,7 @@ import vosk
 import queue
 import json
 import os
+import sys # Adicionado para sys.frozen e sys._MEIPASS
 import time
 import pygame
 
@@ -18,13 +19,38 @@ from reprodutor_audio import (
     tocar_trilha_sonora,
     parar_trilha_sonora,
     definir_volume_trilha,
-    parar_efeito_em_loop
+    parar_efeito_em_loop,
+    set_base_path_for_sounds # NOVA FUNÇÃO A SER ADICIONADA EM reprodutor_audio.py
 )
+
+# --- Função para resolver caminhos de recursos ---
+def resource_path(relative_path):
+    """ Obtém o caminho absoluto para o recurso, funciona para dev e para PyInstaller. """
+    try:
+        # PyInstaller cria uma pasta temp e armazena o caminho em _MEIPASS
+        base_path = sys._MEIPASS
+    except Exception:
+        # Se _MEIPASS não existir, estamos em modo de desenvolvimento
+        base_path = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+    
+    return os.path.join(base_path, relative_path)
 
 # --- Configurações Iniciais Globais ---
 MODEL_DIR_NAME = "vosk-model-small-pt-0.3"
-MODEL_PATH = os.path.join(os.path.dirname(__file__), "..", "modelos_vosk", MODEL_DIR_NAME)
-MAP_FILE_PATH = os.path.join(os.path.dirname(__file__), "..", "config", "mapeamento_eventos.json")
+# MODEL_PATH = os.path.join(os.path.dirname(__file__), "..", "modelos_vosk", MODEL_DIR_NAME)
+MODEL_PATH = resource_path(os.path.join("modelos_vosk", MODEL_DIR_NAME))
+
+# --- NOVO: Configurações para o modelo maior ---
+MODEL_DIR_NAME_LARGE = "vosk-model-pt-fb-v0.1.1-pruned"
+# MODEL_PATH_LARGE = os.path.join(os.path.dirname(__file__), "..", "modelos_vosk_Maior", MODEL_DIR_NAME_LARGE)
+MODEL_PATH_LARGE = resource_path(os.path.join("modelos_vosk_Maior", MODEL_DIR_NAME_LARGE))
+
+# --- NOVO: Flag para selecionar o modelo ---
+USAR_MODELO_GRANDE = False # Mude para False para usar o modelo pequeno
+# ------------------------------------------
+
+# MAP_FILE_PATH = os.path.join(os.path.dirname(__file__), "..", "config", "mapeamento_eventos.json")
+MAP_FILE_PATH = resource_path(os.path.join("config", "mapeamento_eventos.json"))
 
 SAMPLE_RATE = 16000
 DEVICE_ID = None 
@@ -56,68 +82,97 @@ def carregar_mapeamento_eventos_global(caminho_arquivo):
 # Esta função será chamada pela thread do Griô
 def processar_eventos_logica(texto_reconhecido, mapeamento_eventos_carregado, app_ref):
     texto_reconhecido_lower = texto_reconhecido.lower()
-    # app_ref é a instância da AppGrioInterface para chamadas de UI
+    evento_acionado_neste_chunk = False # Flag para garantir que só agimos uma vez por chunk de texto
 
     for evento_mapeado in mapeamento_eventos_carregado:
+        gatilho_que_ativou_este_evento = None # Guarda qual gatilho foi encontrado para ESTE evento
+
         for gatilho in evento_mapeado.get("gatilhos", []):
             if gatilho.lower() in texto_reconhecido_lower:
-                mensagem_log_evento = f"--- Gatilho '{gatilho}' detectado para '{evento_mapeado['evento_id']}' ---"
-                print(mensagem_log_evento)
+                # LOG SEMPRE QUE A STRING DO GATILHO FOR ENCONTRADA
+                mensagem_log_gatilho_encontrado = f"🔎 Texto reconhecido contém gatilho: '{gatilho}' (para evento '{evento_mapeado['evento_id']}')"
+                print(mensagem_log_gatilho_encontrado)
                 if app_ref:
-                    app_ref.adicionar_log_evento(mensagem_log_evento)
+                    app_ref.adicionar_log_evento(mensagem_log_gatilho_encontrado)
 
-                # 1. Parar efeito em loop específico, se solicitado pelo evento
-                id_efeito_para_parar = evento_mapeado.get("parar_efeito_loop_id")
-                if id_efeito_para_parar:
-                    msg_parar_efeito = f"Solicitando parada do efeito em loop ID: '{id_efeito_para_parar}'"
-                    print(msg_parar_efeito)
-                    if app_ref: app_ref.adicionar_log_evento(msg_parar_efeito)
-                    parar_efeito_em_loop(id_efeito_para_parar) # Função do reprodutor_audio
+                # Se ainda não agimos neste chunk de texto E este é o primeiro gatilho encontrado PARA ESTE evento
+                if not evento_acionado_neste_chunk and gatilho_que_ativou_este_evento is None:
+                    gatilho_que_ativou_este_evento = gatilho # Guarda o gatilho específico
 
-                # 2. Parar trilha sonora atual, se solicitado
-                if evento_mapeado.get("parar_trilha_atual", False):
-                    print("Parando trilha sonora atual (se houver)...")
-                    if app_ref: app_ref.adicionar_log_evento("Parando trilha sonora atual...")
-                    parar_trilha_sonora()
-                    time.sleep(0.2) 
+                # Não damos break aqui no loop de gatilhos para logar todos os gatilhos do mesmo evento
 
-                # 3. Tocar nova trilha sonora, se definida
-                trilha_info = evento_mapeado.get("trilha_sonora")
-                if trilha_info and trilha_info.get("arquivo"):
-                    arquivo_trilha = trilha_info["arquivo"]
-                    loop_trilha = -1 if trilha_info.get("loop", False) else 0
-                    volume_trilha = float(trilha_info.get("volume", 1.0))
-                    
-                    msg_tocar_trilha = f"Solicitando trilha: {arquivo_trilha}, Loop: {trilha_info.get('loop', False)}, Volume: {volume_trilha}"
-                    print(msg_tocar_trilha)
-                    if app_ref: app_ref.adicionar_log_evento(msg_tocar_trilha)
-                    
-                    tocar_trilha_sonora(arquivo_trilha, loop=loop_trilha, volume=volume_trilha)
-                
-                # 4. Tocar efeitos sonoros
-                efeitos_lista = evento_mapeado.get("efeitos_sonoros", [])
-                for efeito_info in efeitos_lista:
-                    arquivo_efeito = efeito_info.get("arquivo")
-                    if arquivo_efeito:
-                        loop_efeito = efeito_info.get("loop", False)
-                        id_loop_efeito = efeito_info.get("id_loop", None)
-                        volume_efeito = float(efeito_info.get("volume", 1.0))
+        # Se encontramos um gatilho para este evento E ainda não agimos neste chunk de texto
+        if gatilho_que_ativou_este_evento and not evento_acionado_neste_chunk:
+            evento_acionado_neste_chunk = True # Marcamos que vamos agir (apenas uma vez por chunk)
+            mensagem_log_acao = f"🎬 Ação disparada pelo gatilho '{gatilho_que_ativou_este_evento}' para evento '{evento_mapeado['evento_id']}'"
+            print(mensagem_log_acao)
+            if app_ref:
+                app_ref.adicionar_log_evento(mensagem_log_acao)
 
-                        msg_tocar_efeito = f"Solicitando efeito: {arquivo_efeito}, Loop: {loop_efeito}, ID Loop: {id_loop_efeito}, Volume: {volume_efeito}"
-                        print(msg_tocar_efeito)
-                        if app_ref: app_ref.adicionar_log_evento(msg_tocar_efeito)
-                        
-                        tocar_efeito_sonoro(arquivo_efeito, 
-                                            looping=loop_efeito, 
-                                            id_loop=id_loop_efeito, 
-                                            volume=volume_efeito)
-                return # Processa apenas o primeiro evento correspondente encontrado
+            # --- Início das Ações (código existente) ---
+            # 1. Parar efeito em loop específico, se solicitado pelo evento
+            id_efeito_para_parar = evento_mapeado.get("parar_efeito_loop_id")
+            if id_efeito_para_parar:
+                msg_parar_efeito = f"  -> Solicitando parada do efeito em loop ID: '{id_efeito_para_parar}'"
+                print(msg_parar_efeito)
+                if app_ref: app_ref.adicionar_log_evento(msg_parar_efeito)
+                parar_efeito_em_loop(id_efeito_para_parar) # Função do reprodutor_audio
+
+            # 2. Parar trilha sonora atual, se solicitado
+            if evento_mapeado.get("parar_trilha_atual", False):
+                msg_parar_trilha = "  -> Parando trilha sonora atual (se houver)..."
+                print(msg_parar_trilha)
+                if app_ref: app_ref.adicionar_log_evento(msg_parar_trilha)
+                parar_trilha_sonora()
+                time.sleep(0.2)
+
+            # 3. Tocar nova trilha sonora, se definida
+            trilha_info = evento_mapeado.get("trilha_sonora")
+            if trilha_info and trilha_info.get("arquivo"):
+                arquivo_trilha = trilha_info["arquivo"]
+                loop_trilha = -1 if trilha_info.get("loop", False) else 0
+                volume_trilha = float(trilha_info.get("volume", 1.0))
+
+                msg_tocar_trilha = f"  -> Solicitando trilha: {arquivo_trilha}, Loop: {trilha_info.get('loop', False)}, Volume: {volume_trilha}"
+                print(msg_tocar_trilha)
+                if app_ref: app_ref.adicionar_log_evento(msg_tocar_trilha)
+
+                tocar_trilha_sonora(arquivo_trilha, loop=loop_trilha, volume=volume_trilha)
+
+            # 4. Tocar efeitos sonoros
+            efeitos_lista = evento_mapeado.get("efeitos_sonoros", [])
+            for efeito_info in efeitos_lista:
+                arquivo_efeito = efeito_info.get("arquivo")
+                if arquivo_efeito:
+                    loop_efeito = efeito_info.get("loop", False)
+                    id_loop_efeito = efeito_info.get("id_loop", None)
+                    volume_efeito = float(efeito_info.get("volume", 1.0))
+
+                    msg_tocar_efeito = f"  -> Solicitando efeito: {arquivo_efeito}, Loop: {loop_efeito}, ID Loop: {id_loop_efeito}, Volume: {volume_efeito}"
+                    print(msg_tocar_efeito)
+                    if app_ref: app_ref.adicionar_log_evento(msg_tocar_efeito)
+
+                    tocar_efeito_sonoro(arquivo_efeito,
+                                        looping=loop_efeito,
+                                        id_loop=id_loop_efeito,
+                                        volume=volume_efeito)
+            # --- Fim das Ações ---
+
+        # Continua o loop de eventos para LOGAR outros gatilhos, mas não aciona mais ações neste chunk
 
 
 class AppGrioInterface:
     def __init__(self, root_tk):
         self.root = root_tk
         self.root.title("Griô Local v0.1")
+        # --- NOVO: Define o caminho base para os sons no reprodutor_audio ---
+        # Isso precisa ser feito antes de qualquer tentativa de carregar sons.
+        # A função resource_path aqui garante que o caminho base para 'sons'
+        # seja relativo à raiz do projeto (ou ao _MEIPASS no .exe).
+        sound_base_actual_path = resource_path("sons")
+        set_base_path_for_sounds(sound_base_actual_path)
+        # -------------------------------------------------------------------
+
         self.root.geometry("550x450")
 
         self.rodando_grio_flag = False
@@ -203,6 +258,8 @@ class AppGrioInterface:
         self.rodando_grio_flag = False 
 
         if self.thread_grio_principal and self.thread_grio_principal.is_alive():
+            print("[parar_grio_logica] Enviando poison pill para a fila de áudio...")
+            q_audio.put(None) # ENVIAR A POISON PILL
             print("[parar_grio_logica] Tentando aguardar finalização da thread Griô (timeout 4s)...")
             self.thread_grio_principal.join(timeout=4.0)
             if self.thread_grio_principal.is_alive():
@@ -210,16 +267,49 @@ class AppGrioInterface:
             else:
                 print("[parar_grio_logica] Thread Griô finalizada (detectado pelo join).")
         
-        # A atualização da UI (_grio_thread_finalizada_ui_update) ainda será chamada
-        # pelo `finally` da própria thread quando ela terminar.
+        # --- LÓGICA MOVIDA DE _grio_thread_finalizada_ui_update PARA CÁ ---
+        self.rodando_grio_flag = False 
+        self.btn_iniciar.config(state=tk.NORMAL)
+        self.btn_parar.config(state=tk.DISABLED)
+        self.atualizar_status_ui("Ocioso (Parado)")
+        
+        if pygame.mixer.get_init() and pygame.mixer.music.get_busy():
+            print("[parar_grio_logica] Parando trilha sonora...")
+            parar_trilha_sonora() 
+        
+        self.adicionar_log_evento("🛑 Processamento do Griô finalizado.")
+        print("[parar_grio_logica] Lógica de finalização da UI e Pygame Mixer concluída.")
+        # -------------------------------------------------------------------
+
+        print("[parar_grio_logica] Desinicializando Pygame Mixer e Pygame...")
+        if pygame.mixer.get_init():
+            pygame.mixer.quit()
+        if pygame.get_init(): # Verifica se o Pygame principal foi inicializado
+            pygame.quit()
+        print("[parar_grio_logica] Pygame Mixer e Pygame desinicializados.")
+
 
     def _loop_principal_grio(self):
         # Esta função é o coração da lógica Griô, executada na thread.
-        self.root.after(0, lambda: self.atualizar_status_ui("Carregando modelo Vosk..."))
-        self.root.after(0, lambda: self.adicionar_log_evento("Carregando modelo Vosk..."))
+        
+        # --- NOVO: Determinar qual modelo usar ---
+        if USAR_MODELO_GRANDE:
+            active_model_path = MODEL_PATH_LARGE
+            active_model_name = MODEL_DIR_NAME_LARGE
+            model_size_label = "Grande"
+            print(f"[Griô Config] Usando modelo GRANDE: {active_model_name}")
+        else:
+            active_model_path = MODEL_PATH
+            active_model_name = MODEL_DIR_NAME
+            model_size_label = "Pequeno"
+            print(f"[Griô Config] Usando modelo PEQUENO: {active_model_name}")
+        # -----------------------------------------
 
-        if not os.path.exists(MODEL_PATH):
-            msg_erro_modelo = f"ERRO CRÍTICO: Modelo Vosk não encontrado em {MODEL_PATH}"
+        self.root.after(0, lambda: self.atualizar_status_ui(f"Carregando modelo Vosk ({model_size_label})..."))
+        self.root.after(0, lambda: self.adicionar_log_evento(f"Carregando modelo Vosk ({model_size_label})..."))
+
+        if not os.path.exists(active_model_path):
+            msg_erro_modelo = f"ERRO CRÍTICO: Modelo Vosk não encontrado em {active_model_path}"
             print(msg_erro_modelo)
             self.root.after(0, lambda m=msg_erro_modelo: self.adicionar_log_evento(m))
             self.root.after(0, lambda: messagebox.showerror("Erro Modelo", msg_erro_modelo))
@@ -227,7 +317,8 @@ class AppGrioInterface:
             return
             
         try:
-            vosk_model = vosk.Model(MODEL_PATH)
+            print(f"Carregando modelo de: {active_model_path}") # Log atualizado
+            vosk_model = vosk.Model(active_model_path) # USA O CAMINHO ATIVO
             recognizer = vosk.KaldiRecognizer(vosk_model, SAMPLE_RATE)
             recognizer.SetWords(True) 
             
@@ -256,6 +347,11 @@ class AppGrioInterface:
 
                     try:
                         data = q_audio.get(timeout=0.1) 
+
+                        if data is None: # VERIFICAR POISON PILL PRIMEIRO
+                            print("[_loop_principal_grio] Poison pill (None) recebido da fila. Encerrando loop de áudio.")
+                            break
+
                         if not self.rodando_grio_flag:
                              print("Flag de parada detectada após q_audio.get().")
                              break 
@@ -273,7 +369,7 @@ class AppGrioInterface:
                             break 
                         continue 
                 
-                print("Loop principal da thread Griô interrompido pela flag.")
+                print("Loop principal da thread Griô interrompido.") # Mensagem ajustada
 
             except Exception as e:
                 msg_erro_stream = f"Erro durante a captura/processamento de áudio: {e}"
@@ -281,19 +377,22 @@ class AppGrioInterface:
                 self.root.after(0, lambda m=msg_erro_stream: self.adicionar_log_evento(m))
         finally:
             print("[_loop_principal_grio] Entrou no bloco finally.") 
-            # Usa a variável local 'stream' aqui para o stop/abort
-            if stream is not None: 
-                try:
-                    print("[_loop_principal_grio] Tentando abortar o stream de áudio (stream.abort())...")
-                    stream.abort()
-                    print("[_loop_principal_grio] Stream de áudio abortado (stream.abort() concluído).")
-                    
-                    # stream.close() FOI REMOVIDO DAQUI e movido para _grio_thread_finalizada_ui_update
-                except Exception as e_abort:
-                    print(f"[_loop_principal_grio] Erro ao abortar stream: {e_abort}")
-            else:
-                print("[_loop_principal_grio] Variável local 'stream' era None, nada a abortar.")
             
+            # Limpeza de recursos da thread de áudio
+            stream_local_ref = self.current_stream # Pega a referência antes de potencialmente anular
+            if stream_local_ref is not None: 
+                try:
+                    print("[_loop_principal_grio] Tentando abortar e fechar o stream de áudio...")
+                    stream_local_ref.abort()
+                    stream_local_ref.close()
+                    print("[_loop_principal_grio] Stream de áudio abortado e fechado.")
+                except Exception as e_stream_cleanup:
+                    print(f"[_loop_principal_grio] Erro ao abortar/fechar stream: {e_stream_cleanup}")
+            else:
+                print("[_loop_principal_grio] Nenhuma referência de stream self.current_stream para limpar.")
+            
+            self.current_stream = None # Garante que a referência da instância seja limpa
+
             print("[_loop_principal_grio] Limpando a fila q_audio...") 
             q_clear_count = 0
             while not q_audio.empty():
@@ -304,41 +403,8 @@ class AppGrioInterface:
                     break
             print(f"[_loop_principal_grio] Fila q_audio limpa. Itens removidos: {q_clear_count}.") 
             
-            print("[_loop_principal_grio] Agendando _grio_thread_finalizada_ui_update.") 
-            self.root.after(0, self._grio_thread_finalizada_ui_update)
-            print("[_loop_principal_grio] _grio_thread_finalizada_ui_update agendado. Saindo do finally.") 
+            print("[_loop_principal_grio] Saindo do finally. Thread de áudio deve terminar agora.")
 
-
-    def _grio_thread_finalizada_ui_update(self):
-        """Atualiza a UI quando a thread do Griô termina E TENTA FECHAR O STREAM."""
-        # Atualiza UI primeiro para dar feedback rápido
-        self.rodando_grio_flag = False 
-        self.btn_iniciar.config(state=tk.NORMAL)
-        self.btn_parar.config(state=tk.DISABLED)
-        self.atualizar_status_ui("Ocioso (Parado)")
-        
-        # Para a música se estiver tocando
-        if pygame.mixer.get_init() and pygame.mixer.music.get_busy():
-            print("[_grio_thread_finalizada_ui_update] Parando trilha sonora...")
-            parar_trilha_sonora() 
-        
-        self.adicionar_log_evento("🛑 Processamento do Griô finalizado.")
-        print("Thread principal do Griô terminou sua execução.") # Mensagem ajustada
-
-        # Tenta fechar o stream DEPOIS que a UI foi atualizada
-        if self.current_stream:
-            print("[_grio_thread_finalizada_ui_update] Tentando fechar o stream de áudio (self.current_stream.close())...")
-            try:
-                self.current_stream.close()
-                print("[_grio_thread_finalizada_ui_update] Stream de áudio fechado com sucesso.")
-            except Exception as e:
-                print(f"[_grio_thread_finalizada_ui_update] Erro ao fechar stream de áudio: {e}")
-            finally:
-                 self.current_stream = None # Limpa a referência independentemente do resultado
-        else:
-             print("[_grio_thread_finalizada_ui_update] Nenhuma referência de stream ativa para fechar.")
-             
-        print("[_grio_thread_finalizada_ui_update] Atualização da UI e tentativa de fechar stream concluídas.") # Log final
 
     def ao_fechar_janela_app(self):
         if self.rodando_grio_flag:
