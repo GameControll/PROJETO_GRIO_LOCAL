@@ -1,0 +1,22 @@
+# Ambiente Virtual
+.venv/
+venv/
+ENV/
+env/
+*.pyc
+__pycache__/
+.pytest_cache/
+
+# Arquivos de configuração de IDEs
+.vscode/
+.idea/
+
+# Arquivos de sistema operacional
+.DS_Store
+Thumbs.db
+
+# Arquivos de log
+*.log
+
+# Modelos Vosk (geralmente grandes e podem ser baixados separadamente)
+modelos_vosk/ 

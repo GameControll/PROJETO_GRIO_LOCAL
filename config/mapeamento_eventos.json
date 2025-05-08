@@ -1,0 +1,82 @@
+[
+  {
+    "evento_id": "inicio_acao_selva",
+    "gatilhos": ["inicia a ação", "começa a ação"],
+    "parar_trilha_atual": true,
+    "trilha_sonora": { "arquivo": "Trilha_Sonora_de_Acao.wav", "loop": true, "volume": 0.75 },
+    "efeitos_sonoros": []
+  },
+  {
+    "evento_id": "rugido_leao_persegue",
+    "gatilhos": ["rugido", "leão ruge"],
+    "efeitos_sonoros": [{"arquivo": "Rugido.mp3", "volume": 1.0}]
+  },
+  { 
+    "evento_id": "parar_corrida_loop",
+    "gatilhos": ["parou de correr", "descansou"],
+    "parar_efeito_loop_id": "corrida_ativa"
+  },
+  {
+    "evento_id": "inicio_corrida_loop",
+    "gatilhos": ["começa a correr", "correr ferozmente"],
+    "efeitos_sonoros": [{"arquivo": "Correr_loop.wav", "loop": true, "id_loop": "corrida_ativa", "volume": 0.8}]
+  },
+  {
+    "evento_id": "parar_helicoptero_loop",
+    "gatilhos": ["helicóptero foi embora", "helicóptero desapareceu", "o helicóptero foi embora"],
+    "parar_efeito_loop_id": "helicoptero_ativo"
+  },
+  {
+    "evento_id": "helicoptero_sobrevoando_loop",
+    "gatilhos": ["helicóptero", "escuta um helicóptero"],
+    "efeitos_sonoros": [{"arquivo": "Helicoptero_loop.mp3", "loop": true, "id_loop": "helicoptero_ativo", "volume": 0.9}]
+  },
+  {
+    "evento_id": "disparo_rifle",
+    "gatilhos": ["dispara um tiro", "tiro no leão"],
+    "efeitos_sonoros": [{"arquivo": "Tiro.wav", "volume": 1.0}]
+  },
+  {
+    "evento_id": "clima_tranquilo",
+    "gatilhos": ["clima mais tranquilo", "jack descansa"],
+    "parar_trilha_atual": true,
+    "trilha_sonora": { "arquivo": "Tranquilo.wav", "loop": true, "volume": 0.75 },
+    "efeitos_sonoros": []
+  },
+  {
+    "evento_id": "retorno_acao_mina",
+    "gatilhos": ["ação inicia novamente", "de repente a ação"],
+    "parar_trilha_atual": true,
+    "trilha_sonora": { "arquivo": "Trilha_Sonora_de_Acao.wav", "loop": true, "volume": 0.75 },
+    "efeitos_sonoros": []
+  },
+  {
+    "evento_id": "explosao_mina",
+    "gatilhos": ["mina terrestre", "pisa em uma mina"],
+    "efeitos_sonoros": [{"arquivo": "Mina_Terrestre.wav", "volume": 1.0}]
+  },
+  {
+    "evento_id": "atmosfera_melancolica",
+    "gatilhos": ["atmosfera melancólica", "aproximando lentamente"],
+    "parar_trilha_atual": true,
+    "trilha_sonora": { "arquivo": "Melancolico.mp3", "loop": true, "volume": 0.75 },
+    "efeitos_sonoros": []
+  },
+  {
+    "evento_id": "rugido_leao_final",
+    "gatilhos": ["leão dá um grande rugido"],
+    "efeitos_sonoros": [{"arquivo": "Rugido.mp3", "volume": 1.0}]
+  },
+  {
+    "evento_id": "soldado_morrendo",
+    "gatilhos": ["morrendo"],
+    "parar_trilha_atual": true,
+    "trilha_sonora": { "arquivo": "Desfalecendo.wav", "loop": true, "volume": 0.8 },
+    "efeitos_sonoros": []
+  },
+  {
+    "evento_id": "parar_qualquer_musica", 
+    "gatilhos": ["silêncio total", "parar música", "sem som"],
+    "parar_trilha_atual": true
+  }
+] 
